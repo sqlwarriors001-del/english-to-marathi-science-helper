@@ -1,67 +1,79 @@
 import streamlit as st
-import nltk
-import json
-import pandas as pd
 import os
-from nltk.tokenize import sent_tokenize
+import re
+import pandas as pd
 from openai import OpenAI
 
-# -------------------------------
-# One-time NLTK setup
-# -------------------------------
-nltk.download("punkt", quiet=True)
+# ---------------------------
+# CONFIG
+# ---------------------------
+st.set_page_config(
+    page_title="English → Marathi Science Helper",
+    page_icon="📘",
+    layout="wide"
+)
 
-# -------------------------------
-# OpenAI Client (KEEP KEY SAFE)
-# -------------------------------
+# ---------------------------
+# OPENAI CLIENT
+# ---------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# -------------------------------
-# Streamlit UI
-# -------------------------------
-st.set_page_config(page_title="English → Marathi Science Helper", layout="wide")
+# ---------------------------
+# SAFE SENTENCE SPLITTER
+# ---------------------------
+def split_sentences(text):
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return [s.strip() for s in sentences if s.strip()]
 
+# ---------------------------
+# UI
+# ---------------------------
 st.title("📘 English → Marathi Science Helper")
-st.caption("Designed for school children • Clear • Simple • Recall-friendly")
+st.write(
+    "Paste English science text below. "
+    "You will get **direct Marathi meaning** and an **easy explanation for children**."
+)
 
 text = st.text_area(
     "📋 Paste English science text here:",
-    height=220,
-    placeholder="Paste one or more sentences from a science book..."
+    height=200,
+    placeholder="Example:\nMatter is anything that occupies space.\nIt has mass."
 )
 
-# -------------------------------
-# Button Logic
-# -------------------------------
+# ---------------------------
+# PROCESS
+# ---------------------------
 if st.button("✨ Generate Learning Table") and text.strip():
 
-    with st.spinner("Thinking like a teacher… ✍️"):
-        sentences = sent_tokenize(text)
+    with st.spinner("Generating explanations… please wait ⏳"):
+        sentences = split_sentences(text)
 
         results = []
 
         for sentence in sentences:
             prompt = f"""
-You are an expert school teacher and Marathi language specialist.
+You are a teaching assistant for school children.
 
-For the given English sentence:
-- Translate accurately into Marathi (textbook quality)
-- Explain the idea in very simple Marathi so a child can easily understand and remember
+For the given English sentence, return:
+1) Direct Marathi translation (accurate, textbook style)
+2) Simple Marathi explanation that:
+   - uses very easy words
+   - explains the idea clearly
+   - helps children remember the concept
+   - sounds like a teacher explaining orally
+   - maximum 2 short sentences
+   - no English words
 
-Rules for Simple Marathi:
-- Max 2 short sentences
-- Use only easy Marathi
-- No English words
-- Explain the concept, not word-by-word
-- Sound like a teacher explaining in class
-
-Return ONLY valid JSON in this format:
+Return ONLY valid JSON in this exact format:
 
 {{
-  "english": "{sentence}",
+  "english": "",
   "direct_marathi": "",
   "simple_marathi": ""
 }}
+
+English sentence:
+\"\"\"{sentence}\"\"\"
 """
 
             response = client.chat.completions.create(
@@ -70,55 +82,53 @@ Return ONLY valid JSON in this format:
                 temperature=0.2
             )
 
-            content = response.choices[0].message.content.strip()
+            data = response.choices[0].message.content
 
             try:
-                parsed = json.loads(content)
+                parsed = eval(data)
                 results.append(parsed)
-            except json.JSONDecodeError:
-                st.error("⚠️ Parsing error for a sentence. Please retry.")
+            except:
                 continue
 
-    # -------------------------------
-    # Convert to DataFrame
-    # -------------------------------
-    df = pd.DataFrame(results)
-    df.columns = [
-        "English Sentence",
-        "Direct Marathi Meaning",
-        "Simple Marathi Meaning"
-    ]
+        # ---------------------------
+        # TABLE VIEW (Teacher)
+        # ---------------------------
+        df = pd.DataFrame(results)
+        df.columns = [
+            "English Sentence",
+            "Direct Marathi Meaning",
+            "Simple Marathi Meaning"
+        ]
 
-    # -------------------------------
-    # Display Table (Clean & Wide)
-    # -------------------------------
-    st.subheader("📊 Learning Table")
+        st.subheader("📊 Learning Table")
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True
-    )
+        # ---------------------------
+        # STUDENT FRIENDLY VIEW
+        # ---------------------------
+        st.subheader("🧠 Easy Explanation (Student Friendly)")
 
-    # -------------------------------
-    # Student-Friendly Explanation View
-    # -------------------------------
-    st.subheader("🧠 Easy Explanation (For Students)")
-
-    for _, row in df.iterrows():
-        st.markdown(
-            f"""
-### 🔹 English Sentence
+        for _, row in df.iterrows():
+            st.markdown(
+                f"""
+**🔹 English Sentence**  
 {row['English Sentence']}
 
-📘 **Direct Marathi Meaning:**  
+📘 **Direct Marathi Meaning**  
 {row['Direct Marathi Meaning']}
 
-🟢 **Easy Marathi (Teacher Explanation):**  
+🟢 **Easy Marathi Explanation**  
 {row['Simple Marathi Meaning']}
 
 ---
 """
-        )
+            )
 
-    st.success("✅ Done! This is classroom-ready content.")
+# ---------------------------
+# FOOTER
+# ---------------------------
+st.markdown(
+    "<small>Built to help students learn and understand concepts easily. "
+    "This tool supports learning and does not replace teachers.</small>",
+    unsafe_allow_html=True
+)
